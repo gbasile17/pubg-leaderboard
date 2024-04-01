@@ -12,7 +12,7 @@ import (
 type PUBGClient struct {
 	client *resty.Client
 	config *config.Config
-	logger *logrus.Logger // Add the logger here
+	logger *logrus.Logger
 }
 
 func NewPUBGClient(cfg *config.Config, logger *logrus.Logger) *PUBGClient {
@@ -40,7 +40,7 @@ func (p *PUBGClient) GetCurrentSeason() (*model.SeasonData, error) {
 		Get(fmt.Sprintf("%s/seasons", p.config.PubgAPIEndpoint))
 
 	if err != nil {
-		p.logger.WithError(err).Error("Failed to fetch current season")
+		p.logger.WithError(err).Error("PUBGClient request failed")
 		return nil, err
 	}
 
@@ -50,7 +50,6 @@ func (p *PUBGClient) GetCurrentSeason() (*model.SeasonData, error) {
 		}
 	}
 
-	p.logger.Warn("Current season not found")
 	return nil, fmt.Errorf("current season not found")
 }
 

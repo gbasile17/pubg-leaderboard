@@ -11,27 +11,27 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-var ErrCacheMiss = errors.New("data not found in Redis cache")
+var ErrCacheMiss = errors.New("data not found in Redis")
 
 type RedisClient struct {
 	Client *redis.Client
 }
 
-// NewRedisClient creates a new Redis client and checks the connection.
-func NewRedisClient(addr, password string, db int) (*RedisClient, error) {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: password,
-		DB:       db,
+// NewRedisClient creates a new Redis Cluster client and checks the connection.
+func NewRedisClient(addrs []string, password string, db int) (*RedisClient, error) {
+	clusterClient := redis.NewClusterClient(&redis.ClusterOptions{
+		Addrs:    addrs,    // List of cluster node addresses
+		Password: password, // Password for Redis cluster authentication
 	})
 
-	// Check the connection by sending a PING command to Redis
-	_, err := rdb.Ping(context.Background()).Result()
+	// Check the connection by sending a PING command to one of the cluster nodes
+	_, err := clusterClient.Ping(context.Background()).Result()
 	if err != nil {
 		return nil, err
 	}
 
-	return &RedisClient{Client: rdb}, nil
+	// You can return your RedisClient wrapping the cluster client instead of a regular client
+	return &RedisClient{Client: clusterClient}, nil
 }
 
 // Ping tests connectivity to the Redis server.

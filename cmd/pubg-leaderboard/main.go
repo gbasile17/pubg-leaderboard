@@ -23,10 +23,9 @@ func main() {
 		logger.Fatalf("Error loading config: %v", err)
 	}
 
-	// Initialize Redis client
-	redisClient, err := store.NewRedisClient(cfg.RedisAddr, cfg.RedisPass, cfg.RedisDB)
+	redisClient, err := store.NewRedisClient([]string{cfg.RedisAddr}, cfg.RedisPass, cfg.RedisDB)
 	if err != nil {
-		logger.Fatalf("Error initializing Redis client: %v", err)
+		logger.Fatalf("Error initializing Redis cluster client: %v", err)
 	}
 
 	// Initialize the service layer with Redis client and Resty client

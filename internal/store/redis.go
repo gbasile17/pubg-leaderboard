@@ -14,7 +14,7 @@ import (
 var ErrCacheMiss = errors.New("data not found in Redis")
 
 type RedisClient struct {
-	Client *redis.Client
+	Client *redis.ClusterClient
 }
 
 // NewRedisClient creates a new Redis Cluster client and checks the connection.
@@ -51,7 +51,7 @@ func (rc *RedisClient) GetLeaderboard(ctx context.Context) (*model.LeaderboardRe
 	leaderboard := &model.LeaderboardResponse{}
 	err = json.Unmarshal([]byte(data), leaderboard)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling leaderboard data: %v", err)
+		return nil, fmt.Errorf("redisclient - error unmarshalling leaderboard data: %v", err)
 	}
 
 	return leaderboard, nil
@@ -66,7 +66,7 @@ func (rc *RedisClient) UpdateLeaderboard(ctx context.Context, leaderboardData *m
 	for _, player := range leaderboardData.Included {
 		playerStatsJSON, err := json.Marshal(player.Attributes)
 		if err != nil {
-			return fmt.Errorf("error marshaling player stats: %v", err)
+			return fmt.Errorf("redisclient - error marshaling player stats: %v", err)
 		}
 
 		// Set the player stats hash.
@@ -82,7 +82,7 @@ func (rc *RedisClient) UpdateLeaderboard(ctx context.Context, leaderboardData *m
 	// Execute the transaction.
 	_, err := pipe.Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("error updating leaderboard in Redis: %v", err)
+		return fmt.Errorf("redisclient - error updating leaderboard in Redis: %v", err)
 	}
 
 	return nil
@@ -100,7 +100,7 @@ func (rc *RedisClient) GetSeason(ctx context.Context) (*model.SeasonData, error)
 	season := &model.SeasonData{}
 	err = json.Unmarshal([]byte(data), season)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling season data: %v", err)
+		return nil, fmt.Errorf("redisclient - error unmarshalling season data: %v", err)
 	}
 
 	return season, nil
@@ -110,7 +110,7 @@ func (rc *RedisClient) GetSeason(ctx context.Context) (*model.SeasonData, error)
 func (rc *RedisClient) UpdateSeason(ctx context.Context, season *model.SeasonData) error {
 	data, err := json.Marshal(season)
 	if err != nil {
-		return fmt.Errorf("error marshalling season data: %v", err)
+		return fmt.Errorf("redisclient - error marshalling season data: %v", err)
 	}
 
 	// This sets the season data with a 24-hour expiry, matching the daily season refresh requirement.

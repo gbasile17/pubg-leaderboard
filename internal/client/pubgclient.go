@@ -31,7 +31,7 @@ func NewPUBGClient(cfg *config.Config, logger *logrus.Logger) *PUBGClient {
 
 // GetCurrentSeason fetches the current PUBG season with retry logic and logging.
 func (p *PUBGClient) GetCurrentSeason() (*model.SeasonData, error) {
-	p.logger.Info("Fetching current PUBG season")
+	p.logger.Info("pubgclient - Fetching current PUBG season")
 	var seasonsResp model.SeasonsResponse
 	_, err := p.client.R().
 		SetHeader("Accept", "application/vnd.api+json").
@@ -40,7 +40,7 @@ func (p *PUBGClient) GetCurrentSeason() (*model.SeasonData, error) {
 		Get(fmt.Sprintf("%s/seasons", p.config.PubgAPIEndpoint))
 
 	if err != nil {
-		p.logger.WithError(err).Error("PUBGClient request failed")
+		p.logger.WithError(err).Error("pubgclient - PUBGClient request failed")
 		return nil, err
 	}
 
@@ -50,7 +50,7 @@ func (p *PUBGClient) GetCurrentSeason() (*model.SeasonData, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("current season not found")
+	return nil, fmt.Errorf("pubgclient - current season not found")
 }
 
 // GetSeasonStats fetches leaderboard stats for the given season and game mode with logging.
@@ -59,7 +59,7 @@ func (p *PUBGClient) GetSeasonStats(seasonID, gameMode string) (*model.Leaderboa
 	p.logger.WithFields(logrus.Fields{
 		"seasonID": seasonID,
 		"gameMode": gameMode,
-	}).Info("Fetching season stats from PUBG API")
+	}).Info("pubgclient - Fetching season stats from PUBG API")
 
 	var leaderboardResp model.LeaderboardResponse
 	resp, err := p.client.R().
@@ -73,7 +73,7 @@ func (p *PUBGClient) GetSeasonStats(seasonID, gameMode string) (*model.Leaderboa
 		p.logger.WithError(err).WithFields(logrus.Fields{
 			"seasonID": seasonID,
 			"gameMode": gameMode,
-		}).Error("Error fetching season stats")
+		}).Error("pubgclient - Error fetching season stats")
 		return nil, err
 	}
 
@@ -82,7 +82,7 @@ func (p *PUBGClient) GetSeasonStats(seasonID, gameMode string) (*model.Leaderboa
 		"seasonID": seasonID,
 		"gameMode": gameMode,
 		"status":   resp.Status(),
-	}).Info("Successfully fetched season stats")
+	}).Info("pubgclient - Successfully fetched season stats")
 
 	return &leaderboardResp, nil
 }

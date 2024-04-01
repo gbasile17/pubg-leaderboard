@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/gbasileGP/pubg-leaderboard/internal/client"
@@ -73,24 +74,31 @@ func (ls *LeaderboardService) startSeasonRefresher() {
 // GetCurrentSeason retrieves the current season from Redis or the external API.
 func (ls *LeaderboardService) GetCurrentSeason(ctx context.Context) (*model.SeasonData, error) {
 	seasonData, err := ls.redisClient.GetSeason(ctx)
-	if err == nil && seasonData != nil {
+	if err != nil {
+		wrappedErr := fmt.Errorf("failed to retrieve current season from Redis: %w", err)
+		ls.logger.WithError(wrappedErr).Error("GetCurrentSeason error")
+		return nil, wrappedErr
+	} else if seasonData != nil {
 		ls.logger.Info("Retrieved current season from Redis")
 		return seasonData, nil
 	}
 
+	// Similar error handling for the PUBG client
 	currentSeason, err := ls.pubgClient.GetCurrentSeason()
 	if err != nil {
-		ls.logger.WithError(err).Error("Failed to fetch current season from PUBG API")
-		return nil, err
+		wrappedErr := fmt.Errorf("failed to fetch current season from PUBG API: %w", err)
+		ls.logger.WithError(wrappedErr).Error("GetCurrentSeason error")
+		return nil, wrappedErr
 	}
 
 	err = ls.redisClient.UpdateSeason(ctx, currentSeason)
 	if err != nil {
-		ls.logger.WithError(err).Error("Failed to update current season in Redis")
-	} else {
-		ls.logger.Info("Updated current season in Redis")
+		wrappedErr := fmt.Errorf("failed to update current season in Redis: %w", err)
+		ls.logger.WithError(wrappedErr).Error("GetCurrentSeason error")
+		return currentSeason, wrappedErr
 	}
 
+	ls.logger.Info("Updated current season in Redis")
 	return currentSeason, nil
 }
 
@@ -98,25 +106,34 @@ func (ls *LeaderboardService) GetCurrentSeason(ctx context.Context) (*model.Seas
 func (ls *LeaderboardService) GetCurrentLeaderboard(ctx context.Context) (*model.LeaderboardResponse, error) {
 	season, err := ls.GetCurrentSeason(ctx)
 	if err != nil {
-		ls.logger.WithError(err).Error("Failed to get current season")
-		return nil, err
+		ls.logger.WithError(err).Error("Failed to get current season for leaderboard retrieval")
+		return nil, fmt.Errorf("failed to get current season for leaderboard retrieval: %w", err)
 	}
 
 	leaderboard, err := ls.redisClient.GetLeaderboard(ctx)
-	if err == nil && leaderboard != nil {
+	if err != nil && err != store.ErrCacheMiss {
+		wrappedErr := fmt.Errorf("failed to retrieve leaderboard from Redis: %w", err)
+		ls.logger.WithError(wrappedErr).Error("Failed to retrieve leaderboard from Redis")
+		return nil, wrappedErr
+	} else if leaderboard != nil {
 		ls.logger.Info("Retrieved leaderboard from Redis")
 		return leaderboard, nil
 	}
 
+	// If the leaderboard wasn't in Redis or there was a cache miss, fetch from PUBG API
 	leaderboardResp, err := ls.pubgClient.GetSeasonStats(season.ID, "squad")
 	if err != nil {
-		ls.logger.WithError(err).Error("Failed to fetch leaderboard from PUBG API")
-		return nil, err
+		wrappedErr := fmt.Errorf("failed to fetch leaderboard from PUBG API: %w", err)
+		ls.logger.WithError(wrappedErr).Error("Failed to fetch leaderboard from PUBG API")
+		return nil, wrappedErr
 	}
 
+	// Update the cache with the new leaderboard data
 	err = ls.redisClient.UpdateLeaderboard(ctx, leaderboardResp)
 	if err != nil {
-		ls.logger.WithError(err).Error("Failed to update leaderboard in Redis")
+		wrappedErr := fmt.Errorf("failed to update leaderboard in Redis: %w", err)
+		ls.logger.WithError(wrappedErr).Error("Failed to update leaderboard in Redis")
+		// Continue returning the fetched leaderboard despite Redis update failure
 	} else {
 		ls.logger.Info("Updated leaderboard in Redis")
 	}
@@ -128,17 +145,19 @@ func (ls *LeaderboardService) GetCurrentLeaderboard(ctx context.Context) (*model
 func (ls *LeaderboardService) RefreshCurrentSeason(ctx context.Context) error {
 	currentSeason, err := ls.pubgClient.GetCurrentSeason()
 	if err != nil {
-		ls.logger.WithError(err).Error("Failed to refresh current season from PUBG API")
-		return err
+		wrappedErr := fmt.Errorf("failed to refresh current season from PUBG API: %w", err)
+		ls.logger.WithError(wrappedErr).Error("Failed to refresh current season from PUBG API")
+		return wrappedErr
 	}
 
 	err = ls.redisClient.UpdateSeason(ctx, currentSeason)
 	if err != nil {
-		ls.logger.WithError(err).Error("Failed to update current season in Redis")
-	} else {
-		ls.logger.Info("Refreshed and updated current season in Redis")
+		wrappedErr := fmt.Errorf("failed to update current season in Redis: %w", err)
+		ls.logger.WithError(wrappedErr).Error("Failed to update current season in Redis")
+		return wrappedErr
 	}
 
+	ls.logger.Info("Successfully refreshed and updated current season in Redis")
 	return nil
 }
 
@@ -147,20 +166,23 @@ func (ls *LeaderboardService) RefreshLeaderboard(ctx context.Context) error {
 	season, err := ls.GetCurrentSeason(ctx)
 	if err != nil {
 		ls.logger.WithError(err).Error("Failed to get current season for leaderboard refresh")
-		return err
+		return fmt.Errorf("failed to get current season for leaderboard refresh: %w", err)
 	}
+
 	leaderboardResp, err := ls.pubgClient.GetSeasonStats(season.ID, "squad")
 	if err != nil {
-		ls.logger.WithError(err).Error("Failed to refresh leaderboard from PUBG API")
-		return err
+		wrappedErr := fmt.Errorf("failed to refresh leaderboard from PUBG API: %w", err)
+		ls.logger.WithError(wrappedErr).Error("RefreshLeaderboard error")
+		return wrappedErr
 	}
 
 	err = ls.redisClient.UpdateLeaderboard(ctx, leaderboardResp)
 	if err != nil {
-		ls.logger.WithError(err).Error("Failed to update leaderboard in Redis")
-	} else {
-		ls.logger.Info("Refreshed and updated leaderboard in Redis")
+		wrappedErr := fmt.Errorf("failed to update leaderboard in Redis: %w", err)
+		ls.logger.WithError(wrappedErr).Error("RefreshLeaderboard error")
+		return wrappedErr
 	}
 
+	ls.logger.Info("Refreshed and updated leaderboard in Redis")
 	return nil
 }

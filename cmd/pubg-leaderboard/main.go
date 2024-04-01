@@ -15,6 +15,8 @@ func main() {
 	logger.SetFormatter(&logrus.JSONFormatter{})
 	logger.SetLevel(logrus.InfoLevel)
 
+	logger.Info("Starting PUBG Leaderboard service")
+
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {

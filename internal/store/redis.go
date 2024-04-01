@@ -3,12 +3,15 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/gbasileGP/pubg-leaderboard/internal/model"
 	"github.com/go-redis/redis/v8"
 )
+
+var ErrCacheMiss = errors.New("data not found in Redis cache")
 
 type RedisClient struct {
 	Client *redis.Client
@@ -39,7 +42,9 @@ func (rc *RedisClient) Ping(ctx context.Context) error {
 // GetLeaderboard retrieves the leaderboard data from Redis.
 func (rc *RedisClient) GetLeaderboard(ctx context.Context) (*model.LeaderboardResponse, error) {
 	data, err := rc.Client.Get(ctx, "leaderboard").Result()
-	if err != nil {
+	if err == redis.Nil {
+		return nil, ErrCacheMiss
+	} else if err != nil {
 		return nil, err
 	}
 
@@ -86,7 +91,9 @@ func (rc *RedisClient) UpdateLeaderboard(ctx context.Context, leaderboardData *m
 // GetSeason retrieves the current season identifier from Redis.
 func (rc *RedisClient) GetSeason(ctx context.Context) (*model.SeasonData, error) {
 	data, err := rc.Client.Get(ctx, "current_season").Result()
-	if err != nil {
+	if err == redis.Nil {
+		return nil, ErrCacheMiss
+	} else if err != nil {
 		return nil, err
 	}
 

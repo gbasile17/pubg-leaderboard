@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gbasileGP/pubg-leaderboard/internal/store"
 	"github.com/gbasileGP/pubg-leaderboard/service"
@@ -40,6 +42,8 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/current-season", s.handleGetCurrentSeason)
 	s.router.GET("/current-leaderboard", s.handleGetCurrentLeaderboard)
 	s.router.GET("/player-stats/:playerID", s.handleGetPlayerStats)
+	s.router.POST("/backup-leaderboard", s.handleBackupLeaderboard)
+	s.router.POST("/restore-leaderboard", s.handleRestoreLeaderboard)
 }
 
 // handlePing is a handler for the API health check route.
@@ -104,6 +108,41 @@ func (s *Server) handleGetPlayerStats(c *gin.Context) {
 		"gamesPlayed": gamesPlayed,
 		"wins":        wins,
 	})
+}
+
+// handleBackupLeaderboard handles the request to backup the current leaderboard.
+func (s *Server) handleBackupLeaderboard(c *gin.Context) {
+	bucketName := "pubg-leaderboard" // This can be a query param or can be set in the config/env.
+	backupFileName := fmt.Sprintf("leaderboard_backup_%s.json", time.Now().Format("20060102_150405"))
+
+	err := s.leaderboardService.BackupLeaderboardData(c.Request.Context(), bucketName, backupFileName)
+	if err != nil {
+		s.logger.WithError(err).Error("API: Failed to backup leaderboard data")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to backup leaderboard data"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Leaderboard data backed up successfully", "bucket": bucketName, "file": backupFileName})
+}
+
+// handleRestoreLeaderboard handles the request to restore the leaderboard from a backup.
+func (s *Server) handleRestoreLeaderboard(c *gin.Context) {
+	bucketName := "pubg-leaderboard"  // This can be a query param or can be set in the config/env.
+	backupFileName := c.Query("file") // The name of the backup file to restore from.
+
+	if backupFileName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Backup file name is required"})
+		return
+	}
+
+	err := s.leaderboardService.RestoreLeaderboardData(c.Request.Context(), bucketName, backupFileName)
+	if err != nil {
+		s.logger.WithError(err).Error("API: Failed to restore leaderboard data")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to restore leaderboard data"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Leaderboard data restored successfully", "bucket": bucketName, "file": backupFileName})
 }
 
 // Run starts the HTTP server on a specific address.

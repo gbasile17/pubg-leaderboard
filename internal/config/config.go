@@ -16,6 +16,8 @@ type Config struct {
 	MinioEndpoint   string // MinIO server endpoint
 	MinioAccessKey  string // MinIO access key
 	MinioSecretKey  string // MinIO secret key
+	BackupsBucket   string // MinIO bucket for backups
+	BackupsFile     string // Backup file name
 }
 
 // LoadConfig reads configuration from environment variables.
@@ -35,6 +37,8 @@ func LoadConfig() (*Config, error) {
 		MinioEndpoint:   getEnv("MINIO_ENDPOINT", "minio:9000"),
 		MinioAccessKey:  getEnv("MINIO_ACCESS", "minio"),
 		MinioSecretKey:  getEnv("MINIO_SECRET", "minio123"),
+		BackupsBucket:   getEnv("BACKUPS_BUCKET", "pubg-leaderboard"),
+		BackupsFile:     getEnv("BACKUPS_FILE", "leaderboard-backup.json"),
 	}, nil
 }
 

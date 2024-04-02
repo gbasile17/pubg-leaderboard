@@ -1,13 +1,16 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/gbasileGP/pubg-leaderboard/internal/client"
 	"github.com/gbasileGP/pubg-leaderboard/internal/model"
 	"github.com/gbasileGP/pubg-leaderboard/internal/store"
+	"github.com/minio/minio-go/v7"
 	"github.com/sirupsen/logrus"
 )
 
@@ -227,4 +230,62 @@ func (ls *LeaderboardService) GetPlayerStats(ctx context.Context, playerID strin
 	}).Info("svc: GetPlayerStats - Successfully retrieved player stats")
 
 	return currentRank, gamesPlayed, wins, nil
+}
+
+// BackupLeaderboardData creates a backup of the leaderboard data to MinIO.
+func (ls *LeaderboardService) BackupLeaderboardData(ctx context.Context, bucketName, backupFileName string) error {
+	// Retrieve the current leaderboard data that needs to be backed up.
+	leaderboardData, err := ls.GetCurrentLeaderboard(ctx)
+	if err != nil {
+		ls.logger.WithError(err).Error("Failed to get current leaderboard for backup")
+		return err
+	}
+
+	// Serialize the leaderboard data to JSON or another preferred format.
+	data, err := json.Marshal(leaderboardData)
+	if err != nil {
+		ls.logger.WithError(err).Error("Failed to serialize leaderboard data for backup")
+		return err
+	}
+
+	// Upload the serialized data to MinIO.
+	_, err = ls.minioClient.Client.PutObject(ctx, bucketName, backupFileName, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
+		ContentType: "application/json",
+	})
+	if err != nil {
+		ls.logger.WithError(err).Error("Failed to backup leaderboard data to MinIO")
+		return err
+	}
+
+	ls.logger.Info("Leaderboard data backed up successfully")
+	return nil
+}
+
+// RestoreLeaderboardData restores the leaderboard data from a backup in MinIO.
+func (ls *LeaderboardService) RestoreLeaderboardData(ctx context.Context, bucketName, backupFileName string) error {
+	// Download the backup file from MinIO.
+	object, err := ls.minioClient.Client.GetObject(ctx, bucketName, backupFileName, minio.GetObjectOptions{})
+	if err != nil {
+		ls.logger.WithError(err).Error("Failed to retrieve leaderboard backup from MinIO")
+		return err
+	}
+	defer object.Close()
+
+	// Deserialize the downloaded data into the leaderboard structure.
+	var leaderboardData model.LeaderboardResponse
+	err = json.NewDecoder(object).Decode(&leaderboardData)
+	if err != nil {
+		ls.logger.WithError(err).Error("Failed to deserialize leaderboard data from backup")
+		return err
+	}
+
+	// Update the Redis store with the restored leaderboard data.
+	err = ls.redisClient.UpdateLeaderboard(ctx, &leaderboardData)
+	if err != nil {
+		ls.logger.WithError(err).Error("Failed to update Redis with the restored leaderboard data")
+		return err
+	}
+
+	ls.logger.Info("Leaderboard data restored successfully")
+	return nil
 }

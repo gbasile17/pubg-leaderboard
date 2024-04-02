@@ -16,13 +16,15 @@ type LeaderboardService struct {
 	redisClient *store.RedisClient
 	pubgClient  *client.PUBGClient
 	logger      *logrus.Logger
+	minioClient *store.MinioClient
 }
 
 // NewLeaderboardService creates a new service for leaderboard operations.
-func NewLeaderboardService(redisClient *store.RedisClient, pubgClient *client.PUBGClient, logger *logrus.Logger) *LeaderboardService {
+func NewLeaderboardService(redisClient *store.RedisClient, pubgClient *client.PUBGClient, minioClient *store.MinioClient, logger *logrus.Logger) *LeaderboardService {
 	service := &LeaderboardService{
 		redisClient: redisClient,
 		pubgClient:  pubgClient,
+		minioClient: minioClient,
 		logger:      logger,
 	}
 
@@ -48,6 +50,32 @@ func (ls *LeaderboardService) startLeaderboardRefresher() {
 	}
 }
 
+// RefreshLeaderboard refreshes the leaderboard data and updates the cache.
+func (ls *LeaderboardService) RefreshLeaderboard(ctx context.Context) error {
+	season, err := ls.GetCurrentSeason(ctx)
+	if err != nil {
+		ls.logger.WithError(err).Error("svc: RefreshLeaderboard - Failed to get current season for leaderboard refresh")
+		return fmt.Errorf("svc: RefreshLeaderboard - failed to get current season for leaderboard refresh: %w", err)
+	}
+
+	leaderboardResp, err := ls.pubgClient.GetSeasonStats(season.ID, "squad-fpp")
+	if err != nil {
+		wrappedErr := fmt.Errorf("svc: RefreshCurrentSeason - failed to refresh leaderboard from PUBG API: %w", err)
+		ls.logger.WithError(wrappedErr).Error("svc: GetSeasonStats - RefreshLeaderboard error")
+		return wrappedErr
+	}
+
+	err = ls.redisClient.UpdateLeaderboard(ctx, leaderboardResp)
+	if err != nil {
+		wrappedErr := fmt.Errorf("svc: UpdateLeaderboard - failed to update leaderboard in Redis: %w", err)
+		ls.logger.WithError(wrappedErr).Error("svc: UpdateLeaderboard - RefreshLeaderboard error")
+		return wrappedErr
+	}
+
+	ls.logger.Info("svc: UpdateLeaderboard - Refreshed and updated leaderboard in Redis")
+	return nil
+}
+
 // startSeasonRefresher runs a loop that refreshes the current season daily.
 func (ls *LeaderboardService) startSeasonRefresher() {
 	// Refresh immediately on startup, then use the ticker for subsequent refreshes
@@ -69,6 +97,26 @@ func (ls *LeaderboardService) startSeasonRefresher() {
 			ls.logger.Info("svc: startSeasonRefresher - Current season refreshed successfully")
 		}
 	}
+}
+
+// RefreshCurrentSeason refreshes the current season data and updates the cache.
+func (ls *LeaderboardService) RefreshCurrentSeason(ctx context.Context) error {
+	currentSeason, err := ls.pubgClient.GetCurrentSeason()
+	if err != nil {
+		wrappedErr := fmt.Errorf("svc: RefreshCurrentSeason - failed to refresh current season from PUBG API: %w", err)
+		ls.logger.WithError(wrappedErr).Error("svc: RefreshCurrentSeason - Failed to refresh current season from PUBG API")
+		return wrappedErr
+	}
+
+	err = ls.redisClient.UpdateSeason(ctx, currentSeason)
+	if err != nil {
+		wrappedErr := fmt.Errorf("svc: UpdateSeason - failed to update current season in Redis: %w", err)
+		ls.logger.WithError(wrappedErr).Error("svc: RefreshCurrentSeason - Failed to update current season in Redis")
+		return wrappedErr
+	}
+
+	ls.logger.Info("svc: UpdateSeason - Successfully refreshed and updated current season in Redis")
+	return nil
 }
 
 // GetCurrentSeason retrieves the current season from Redis or the external API.
@@ -134,7 +182,7 @@ func (ls *LeaderboardService) GetCurrentLeaderboard(ctx context.Context) (*model
 	}
 
 	// Fetch from the PUBG API as either there was a cache miss or another Redis error
-	leaderboardResp, err := ls.pubgClient.GetSeasonStats(season.ID, "squad")
+	leaderboardResp, err := ls.pubgClient.GetSeasonStats(season.ID, "squad-fpp")
 	if err != nil {
 		wrappedErr := fmt.Errorf("svc: GetSeasonStats - failed to fetch leaderboard from PUBG API: %w", err)
 		ls.logger.WithError(wrappedErr).Error("svc: GetSeasonStats - Failed to fetch leaderboard from PUBG API")
@@ -153,48 +201,30 @@ func (ls *LeaderboardService) GetCurrentLeaderboard(ctx context.Context) (*model
 	return leaderboardResp, nil
 }
 
-// RefreshCurrentSeason refreshes the current season data and updates the cache.
-func (ls *LeaderboardService) RefreshCurrentSeason(ctx context.Context) error {
-	currentSeason, err := ls.pubgClient.GetCurrentSeason()
+// GetPlayerStats retrieves specific stats for a single player.
+func (ls *LeaderboardService) GetPlayerStats(ctx context.Context, playerID string) (int, int, int, error) {
+	playerStats, err := ls.redisClient.GetPlayerStats(ctx, playerID)
 	if err != nil {
-		wrappedErr := fmt.Errorf("svc: RefreshCurrentSeason - failed to refresh current season from PUBG API: %w", err)
-		ls.logger.WithError(wrappedErr).Error("svc: RefreshCurrentSeason - Failed to refresh current season from PUBG API")
-		return wrappedErr
+		ls.logger.WithError(err).WithField("playerID", playerID).Error("svc: GetPlayerStats - Failed to retrieve player stats from Redis")
+		return 0, 0, 0, err
 	}
 
-	err = ls.redisClient.UpdateSeason(ctx, currentSeason)
-	if err != nil {
-		wrappedErr := fmt.Errorf("svc: UpdateSeason - failed to update current season in Redis: %w", err)
-		ls.logger.WithError(wrappedErr).Error("svc: RefreshCurrentSeason - Failed to update current season in Redis")
-		return wrappedErr
+	if playerStats == nil {
+		ls.logger.WithField("playerID", playerID).Info("svc: GetPlayerStats - Player stats not found in Redis")
+		return 0, 0, 0, store.ErrCacheMiss
 	}
 
-	ls.logger.Info("svc: UpdateSeason - Successfully refreshed and updated current season in Redis")
-	return nil
-}
+	// Extracting the required information from playerStats.
+	currentRank := playerStats.Rank
+	gamesPlayed := playerStats.Stats.Games
+	wins := playerStats.Stats.Wins
 
-// RefreshLeaderboard refreshes the leaderboard data and updates the cache.
-func (ls *LeaderboardService) RefreshLeaderboard(ctx context.Context) error {
-	season, err := ls.GetCurrentSeason(ctx)
-	if err != nil {
-		ls.logger.WithError(err).Error("svc: RefreshLeaderboard - Failed to get current season for leaderboard refresh")
-		return fmt.Errorf("svc: RefreshLeaderboard - failed to get current season for leaderboard refresh: %w", err)
-	}
+	ls.logger.WithFields(logrus.Fields{
+		"playerID":    playerID,
+		"currentRank": currentRank,
+		"gamesPlayed": gamesPlayed,
+		"wins":        wins,
+	}).Info("svc: GetPlayerStats - Successfully retrieved player stats")
 
-	leaderboardResp, err := ls.pubgClient.GetSeasonStats(season.ID, "squad")
-	if err != nil {
-		wrappedErr := fmt.Errorf("svc: RefreshCurrentSeason - failed to refresh leaderboard from PUBG API: %w", err)
-		ls.logger.WithError(wrappedErr).Error("svc: GetSeasonStats - RefreshLeaderboard error")
-		return wrappedErr
-	}
-
-	err = ls.redisClient.UpdateLeaderboard(ctx, leaderboardResp)
-	if err != nil {
-		wrappedErr := fmt.Errorf("svc: UpdateLeaderboard - failed to update leaderboard in Redis: %w", err)
-		ls.logger.WithError(wrappedErr).Error("svc: UpdateLeaderboard - RefreshLeaderboard error")
-		return wrappedErr
-	}
-
-	ls.logger.Info("svc: UpdateLeaderboard - Refreshed and updated leaderboard in Redis")
-	return nil
+	return currentRank, gamesPlayed, wins, nil
 }

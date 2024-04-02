@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gbasileGP/pubg-leaderboard/internal/model"
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
 
 var ErrCacheMiss = errors.New("data not found in Redis")
@@ -19,9 +19,11 @@ type RedisClient struct {
 
 // NewRedisClient creates a new Redis Cluster client and checks the connection.
 func NewRedisClient(addrs []string, password string, db int) (*RedisClient, error) {
+	fmt.Println("Creating Redis Cluster Client with addresses:", addrs) // Debug print
+
 	clusterClient := redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs:    addrs,    // List of cluster node addresses
-		Password: password, // Password for Redis cluster authentication
+		Addrs:    addrs,
+		Password: password,
 	})
 
 	// Check the connection by sending a PING command to one of the cluster nodes
@@ -59,8 +61,17 @@ func (rc *RedisClient) GetLeaderboard(ctx context.Context) (*model.LeaderboardRe
 
 // UpdateLeaderboard updates and structures the leaderboard data in Redis.
 func (rc *RedisClient) UpdateLeaderboard(ctx context.Context, leaderboardData *model.LeaderboardResponse) error {
+	// Serialize the entire leaderboard data
+	leaderboardJSON, err := json.Marshal(leaderboardData)
+	if err != nil {
+		return fmt.Errorf("redisclient - error marshaling entire leaderboard data: %v", err)
+	}
+
 	// Begin a new Redis transaction.
 	pipe := rc.Client.TxPipeline()
+
+	// Set the entire leaderboard.
+	pipe.Set(ctx, "leaderboard", leaderboardJSON, 10*time.Minute)
 
 	// Store each player's stats in a separate hash.
 	for _, player := range leaderboardData.Included {
@@ -70,22 +81,36 @@ func (rc *RedisClient) UpdateLeaderboard(ctx context.Context, leaderboardData *m
 		}
 
 		// Set the player stats hash.
-		pipe.HSet(ctx, player.ID, "stats", playerStatsJSON)
-	}
-
-	// Optionally set an expiration time on each hash.
-	// This is not necessary if your leaderboard doesn't expire or if you handle expiration differently.
-	for _, player := range leaderboardData.Included {
-		pipe.Expire(ctx, player.ID, 10*time.Minute)
+		pipe.HSet(ctx, "player_stats:"+player.ID, "stats", playerStatsJSON)
+		// Optionally set an expiration time on each hash.
+		pipe.Expire(ctx, "player_stats:"+player.ID, 10*time.Minute)
 	}
 
 	// Execute the transaction.
-	_, err := pipe.Exec(ctx)
+	_, err = pipe.Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("redisclient - error updating leaderboard in Redis: %v", err)
 	}
 
 	return nil
+}
+
+// GetPlayerStats retrieves a single player's stats from Redis.
+func (rc *RedisClient) GetPlayerStats(ctx context.Context, playerID string) (*model.PlayerAttribute, error) {
+	data, err := rc.Client.HGet(ctx, "player_stats:"+playerID, "stats").Result()
+	if err == redis.Nil {
+		return nil, ErrCacheMiss
+	} else if err != nil {
+		return nil, err
+	}
+
+	playerStats := &model.PlayerAttribute{}
+	err = json.Unmarshal([]byte(data), playerStats)
+	if err != nil {
+		return nil, fmt.Errorf("redisclient - error unmarshalling player stats: %v", err)
+	}
+
+	return playerStats, nil
 }
 
 // GetSeason retrieves the current season identifier from Redis.

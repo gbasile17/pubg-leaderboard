@@ -67,3 +67,12 @@ type PlayerStats struct {
 	Tier           string  `json:"tier"`
 	SubTier        string  `json:"subTier"`
 }
+
+type GameModes struct {
+	Solo     string
+	Duo      string
+	Squad    string
+	SoloFPP  string
+	DuoFPP   string
+	SquadFPP string
+}

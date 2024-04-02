@@ -33,12 +33,21 @@ func NewPUBGClient(cfg *config.Config, logger *logrus.Logger) *PUBGClient {
 func (p *PUBGClient) GetCurrentSeason() (*model.SeasonData, error) {
 	p.logger.Info("pubgclient - Fetching current PUBG season")
 	var seasonsResp model.SeasonsResponse
-	_, err := p.client.R().
+	resp, err := p.client.R().
 		SetHeader("Accept", "application/vnd.api+json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", p.config.PubgAPIKey)).
 		SetResult(&seasonsResp).
 		Get(fmt.Sprintf("%s/seasons", p.config.PubgAPIEndpoint))
 
+	if resp.StatusCode() == 401 {
+		return nil, fmt.Errorf("pubgclient - Unauthorized: API key invalid or missing")
+	} else if resp.StatusCode() == 404 {
+		return nil, fmt.Errorf("pubgclient - Not Found: The specified resource was not found")
+	} else if resp.StatusCode() == 415 {
+		return nil, fmt.Errorf("pubgclient - Unsupported media type: Content type incorrect or not specified")
+	} else if resp.StatusCode() == 429 {
+		return nil, fmt.Errorf("pubgclient - Too many requests")
+	}
 	if err != nil {
 		p.logger.WithError(err).Error("pubgclient - PUBGClient request failed")
 		return nil, err
@@ -68,7 +77,16 @@ func (p *PUBGClient) GetSeasonStats(seasonID, gameMode string) (*model.Leaderboa
 		SetResult(&leaderboardResp).
 		Get(fmt.Sprintf("%s/leaderboards/%s/%s", p.config.PubgAPIEndpoint, seasonID, gameMode))
 
-	// Log if there was an error in the request
+	if resp.StatusCode() == 401 {
+		return nil, fmt.Errorf("pubgclient - Unauthorized: API key invalid or missing")
+	} else if resp.StatusCode() == 404 {
+		return nil, fmt.Errorf("pubgclient - Not Found: The specified resource was not found")
+	} else if resp.StatusCode() == 415 {
+		return nil, fmt.Errorf("pubgclient - Unsupported media type: Content type incorrect or not specified")
+	} else if resp.StatusCode() == 429 {
+		return nil, fmt.Errorf("pubgclient - Too many requests")
+	}
+
 	if err != nil {
 		p.logger.WithError(err).WithFields(logrus.Fields{
 			"seasonID": seasonID,

@@ -39,6 +39,7 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/redis-ping", s.handleRedisPing)
 	s.router.GET("/current-season", s.handleGetCurrentSeason)
 	s.router.GET("/current-leaderboard", s.handleGetCurrentLeaderboard)
+	s.router.GET("/player-stats/:playerID", s.handleGetPlayerStats)
 }
 
 // handlePing is a handler for the API health check route.
@@ -79,6 +80,30 @@ func (s *Server) handleGetCurrentLeaderboard(c *gin.Context) {
 
 	// Depending on your LeaderboardData model, you may need to adjust how you marshal the data to JSON
 	c.JSON(http.StatusOK, leaderboardData)
+}
+
+// handleGetPlayerStats is a handler for fetching the stats of a single player.
+func (s *Server) handleGetPlayerStats(c *gin.Context) {
+	playerID := c.Param("playerID")
+
+	rank, gamesPlayed, wins, err := s.leaderboardService.GetPlayerStats(context.Background(), playerID)
+	if err != nil {
+		if err == store.ErrCacheMiss {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Player stats not found"})
+		} else {
+			s.logger.WithError(err).Error("Failed to get player stats")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get player stats"})
+		}
+		return
+	}
+
+	// Send a JSON response with the player stats.
+	c.JSON(http.StatusOK, gin.H{
+		"playerID":    playerID,
+		"rank":        rank,
+		"gamesPlayed": gamesPlayed,
+		"wins":        wins,
+	})
 }
 
 // Run starts the HTTP server on a specific address.

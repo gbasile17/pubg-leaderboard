@@ -13,6 +13,9 @@ type Config struct {
 	RedisDB         int    // Redis database number
 	PubgAPIEndpoint string // PUBG API endpoint
 	PubgAPIKey      string // PUBG API key
+	MinioEndpoint   string // MinIO server endpoint
+	MinioAccessKey  string // MinIO access key
+	MinioSecretKey  string // MinIO secret key
 }
 
 // LoadConfig reads configuration from environment variables.
@@ -27,8 +30,11 @@ func LoadConfig() (*Config, error) {
 		RedisAddr:       getEnv("REDIS_ADDR", "redis-cluster:6379"),
 		RedisPass:       getEnv("REDIS_PASS", "themagicword"),
 		RedisDB:         redisDB,
-		PubgAPIEndpoint: getEnv("PUBG_API_ENDPOINT", "https://api.pubg.com/shards/steam"),
+		PubgAPIEndpoint: getEnv("PUBG_API_ENDPOINT", "https://api.pubg.com/shards/pc-na"),
 		PubgAPIKey:      getEnv("PUBG_API_KEY", ""),
+		MinioEndpoint:   getEnv("MINIO_ENDPOINT", "minio:9000"),
+		MinioAccessKey:  getEnv("MINIO_ACCESS", "minio"),
+		MinioSecretKey:  getEnv("MINIO_SECRET", "minio123"),
 	}, nil
 }
 

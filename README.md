@@ -1,4 +1,3 @@
-```
 # PUBG Leaderboard Data Manager
 
 This application serves as a data manager for PUBG (PlayerUnknown's Battlegrounds) leaderboard statistics. It provides services to load leaderboard data into Redis, backup data to MinIO, and restore from MinIO.
